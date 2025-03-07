@@ -238,6 +238,10 @@ const DEFAULT_ROASTS = [
 let lastRoastTime = 0;
 let ROAST_COOLDOWN_MS = 3000; // 3 seconds cooldown
 
+// Track current line position and errors
+let lastCursorLine = -1;
+let pendingErrorLines: Map<number, vscode.Diagnostic[]> = new Map();
+
 // Function to get a random ASCII art
 function getRandomAsciiArt(): string {
   // Combine all ASCII art options
@@ -316,18 +320,52 @@ export function activate(context: vscode.ExtensionContext) {
     const errors = diagnostics.filter(diag => diag.severity === vscode.DiagnosticSeverity.Error);
     
     if (errors.length > 0) {
+      // Group errors by line
+      errors.forEach(error => {
+        const lineNumber = error.range.start.line;
+        if (!pendingErrorLines.has(lineNumber)) {
+          pendingErrorLines.set(lineNumber, []);
+        }
+        pendingErrorLines.get(lineNumber)?.push(error);
+      });
+      
+      // Get current line
+      const currentLine = activeEditor.selection.active.line;
+      lastCursorLine = currentLine;
+    }
+  });
+  
+  // Watch for cursor position changes
+  const cursorSubscription = vscode.window.onDidChangeTextEditorSelection((_event) => {
+    const activeEditor = vscode.window.activeTextEditor;
+    if (!activeEditor) return;
+    
+    // Check if extension is enabled
+    const config = vscode.workspace.getConfiguration('ragelang');
+    const isEnabled = config.get<boolean>('enabled', true);
+    if (!isEnabled) return;
+    
+    // Check if cursor moved to a new line
+    const currentLine = activeEditor.selection.active.line;
+    
+    // If we moved to a new line and had errors on the last line
+    if (lastCursorLine !== -1 && currentLine !== lastCursorLine && pendingErrorLines.has(lastCursorLine)) {
       // Check cooldown to prevent spam
       const now = Date.now();
-      if (now - lastRoastTime < ROAST_COOLDOWN_MS) {
-        return;
+      if (now - lastRoastTime >= ROAST_COOLDOWN_MS) {
+        // Update last roast time
+        lastRoastTime = now;
+        
+        // Display roast for the previous line's errors
+        displayRandomRoast();
+        
+        // Clear that line's errors
+        pendingErrorLines.delete(lastCursorLine);
       }
-      
-      // Update last roast time
-      lastRoastTime = now;
-      
-      // Display a random roast for any error
-      displayRandomRoast();
     }
+    
+    // Update last cursor line position
+    lastCursorLine = currentLine;
   });
   
   // Function to display a random roast in the output channel
@@ -402,8 +440,43 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
   
+  // Clear any pending errors when document changes
+  const documentChangeSubscription = vscode.workspace.onDidChangeTextDocument((event) => {
+    const activeEditor = vscode.window.activeTextEditor;
+    if (!activeEditor || event.document !== activeEditor.document) return;
+    
+    // When a document changes, update the pending error lines
+    // as some errors might have been fixed
+    updatePendingErrors();
+  });
+  
+  // Function to update the pending errors map
+  function updatePendingErrors() {
+    const activeEditor = vscode.window.activeTextEditor;
+    if (!activeEditor) return;
+    
+    const uri = activeEditor.document.uri;
+    const diagnostics = vscode.languages.getDiagnostics(uri);
+    const errors = diagnostics.filter(diag => diag.severity === vscode.DiagnosticSeverity.Error);
+    
+    // Create a new map with current errors
+    const currentErrorLines = new Map<number, vscode.Diagnostic[]>();
+    errors.forEach(error => {
+      const lineNumber = error.range.start.line;
+      if (!currentErrorLines.has(lineNumber)) {
+        currentErrorLines.set(lineNumber, []);
+      }
+      currentErrorLines.get(lineNumber)?.push(error);
+    });
+    
+    // Replace the old map
+    pendingErrorLines = currentErrorLines;
+  }
+  
   context.subscriptions.push(
     diagnosticsSubscription,
+    cursorSubscription,
+    documentChangeSubscription,
     triggerRoastCommand,
     toggleCommand,
     setApiKeyCommand,
