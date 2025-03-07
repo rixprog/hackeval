@@ -242,6 +242,10 @@ let ROAST_COOLDOWN_MS = 3000; // 3 seconds cooldown
 let lastCursorLine = -1;
 let pendingErrorLines: Map<number, vscode.Diagnostic[]> = new Map();
 
+// For comment decorations
+let decorationType: vscode.TextEditorDecorationType;
+let activeDecorations: Map<string, vscode.DecorationOptions[]> = new Map();
+
 // Function to get a random ASCII art
 function getRandomAsciiArt(): string {
   // Combine all ASCII art options
@@ -279,6 +283,95 @@ async function generateRoast(): Promise<string> {
     console.error('Error generating roast:', error);
     return getRandomRoast();
   }
+}
+
+// Function to create comment decoration for a specific line
+async function addCommentDecoration(editor: vscode.TextEditor, lineNumber: number) {
+  if (!decorationType) {
+    // Create a new decoration type for inline comments
+    decorationType = vscode.window.createTextEditorDecorationType({
+      after: {
+        margin: '0 0 0 10px',
+        color: '#ff6b6b',
+        fontStyle: 'italic'
+      },
+      isWholeLine: true,
+    });
+  }
+  
+  // Generate a roast
+  const roast = await generateRoast();
+  
+  // Determine language-specific comment syntax
+  const languageId = editor.document.languageId;
+  let commentPrefix = '// ';
+  
+  // Handle different language comment styles
+  switch (languageId) {
+    case 'python':
+    case 'shellscript':
+    case 'yaml':
+    case 'makefile':
+      commentPrefix = '# ';
+      break;
+    case 'html':
+    case 'xml':
+    case 'svg':
+      commentPrefix = '<!-- ';
+      break;
+    case 'css':
+    case 'less':
+    case 'scss':
+      commentPrefix = '/* ';
+      break;
+    case 'lua':
+      commentPrefix = '-- ';
+      break;
+    case 'ruby':
+      commentPrefix = '# ';
+      break;
+    // Add more languages as needed
+  }
+  
+  // Create decoration for the specific line
+  const lineText = editor.document.lineAt(lineNumber).text;
+  const lineEnd = lineText.length;
+  const range = new vscode.Range(lineNumber, lineEnd, lineNumber, lineEnd);
+  
+  const decorationOptions = {
+    range,
+    renderOptions: {
+      after: {
+        contentText: `${commentPrefix}${roast}`,
+      }
+    }
+  };
+  
+  // Get or create the decorations array for this editor
+  const editorId = editor.document.uri.toString();
+  if (!activeDecorations.has(editorId)) {
+    activeDecorations.set(editorId, []);
+  }
+  
+  // Add new decoration
+  const decorations = activeDecorations.get(editorId)!;
+  decorations.push(decorationOptions);
+  
+  // Apply decorations
+  editor.setDecorations(decorationType, decorations);
+  
+  // Set a timeout to remove the decoration after a few seconds
+  setTimeout(() => {
+    const index = decorations.findIndex(d => 
+      d.range.isEqual(decorationOptions.range) && 
+      d.renderOptions?.after?.contentText === decorationOptions.renderOptions.after.contentText
+    );
+    
+    if (index !== -1) {
+      decorations.splice(index, 1);
+      editor.setDecorations(decorationType, decorations);
+    }
+  }, 5000); // Display for 5 seconds
 }
 
 // Output channel for ASCII memes
@@ -356,8 +449,11 @@ export function activate(context: vscode.ExtensionContext) {
         // Update last roast time
         lastRoastTime = now;
         
-        // Display roast for the previous line's errors
-        displayRandomRoast();
+        // Display roast as a comment in the editor
+        addCommentDecoration(activeEditor, lastCursorLine);
+        
+        // Also show ASCII art in output channel (optional)
+        displayAsciiArt();
         
         // Clear that line's errors
         pendingErrorLines.delete(lastCursorLine);
@@ -368,28 +464,29 @@ export function activate(context: vscode.ExtensionContext) {
     lastCursorLine = currentLine;
   });
   
-  // Function to display a random roast in the output channel
-  async function displayRandomRoast() {
+  // Function to display ASCII art in the output channel
+  function displayAsciiArt() {
     try {
       // Get random ASCII art
       const asciiArt = getRandomAsciiArt();
       
-      // Generate a roast message
-      const roast = await generateRoast();
-      
       // Display in output channel
       outputChannel.clear();
       outputChannel.appendLine(asciiArt);
-      outputChannel.appendLine(roast);
       outputChannel.show();
     } catch (error) {
-      console.error('Error displaying roast:', error);
+      console.error('Error displaying ASCII art:', error);
     }
   }
   
   // Command to manually trigger a roast
   const triggerRoastCommand = vscode.commands.registerCommand('ragelang.triggerRoast', () => {
-    displayRandomRoast();
+    const activeEditor = vscode.window.activeTextEditor;
+    if (!activeEditor) return;
+    
+    const currentLine = activeEditor.selection.active.line;
+    addCommentDecoration(activeEditor, currentLine);
+    displayAsciiArt();
   });
   
   // Command to enable/disable the extension
@@ -473,19 +570,53 @@ export function activate(context: vscode.ExtensionContext) {
     pendingErrorLines = currentErrorLines;
   }
   
+  // Clean up decorations when an editor is closed
+  const editorCloseSubscription = vscode.window.onDidChangeVisibleTextEditors((editors) => {
+    // Clean up decorations for editors that are no longer visible
+    const visibleEditorIds = new Set(editors.map(e => e.document.uri.toString()));
+    
+    // Check which documents are no longer open
+    const entriesToRemove: string[] = [];
+    for (const [editorId] of activeDecorations) {
+      if (!visibleEditorIds.has(editorId)) {
+        entriesToRemove.push(editorId);
+      }
+    }
+    
+    // Remove decorations for closed documents
+    entriesToRemove.forEach(id => activeDecorations.delete(id));
+  });
+  
   context.subscriptions.push(
     diagnosticsSubscription,
     cursorSubscription,
     documentChangeSubscription,
+    editorCloseSubscription,
     triggerRoastCommand,
     toggleCommand,
     setApiKeyCommand,
     setCooldownCommand
   );
+  
+  // Ensure we clean up when the extension is deactivated
+  context.subscriptions.push({
+    dispose: () => {
+      if (decorationType) {
+        decorationType.dispose();
+      }
+    }
+  });
 }
 
 export function deactivate() {
   if (outputChannel) {
     outputChannel.dispose();
   }
+  
+  if (decorationType) {
+    decorationType.dispose();
+  }
+  
+  // Clear all decorations
+  activeDecorations.clear();
 }
