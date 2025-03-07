@@ -1,0 +1,71 @@
+{
+  "name": "ragelang",
+  "displayName": "RageLang",
+  "description": "Roasts developers for syntax errors with rage-filled comments and ASCII memes",
+  "version": "0.1.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ragelang.toggle",
+        "title": "RageLang: Toggle Extension"
+      },
+      {
+        "command": "ragelang.setApiKey",
+        "title": "RageLang: Set Google Gemini API Key"
+      },
+      {
+        "command": "ragelang.clearRoasts",
+        "title": "RageLang: Clear All Roast Comments"
+      }
+    ],
+    "configuration": {
+      "title": "RageLang",
+      "properties": {
+        "ragelang.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable RageLang"
+        },
+        "ragelang.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for Google Gemini"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@types/vscode": "^1.60.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.45.0",
+    "ts-loader": "^9.4.4",
+    "typescript": "^5.1.6",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.1.0"
+  }
+}
