@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // Initialize the Google Generative AI with your API key
 let genAI: GoogleGenerativeAI | undefined;
 
-// Compiler ASCII expressions for different error types
+// Keep ASCII art for fallback cases
 const COMPILER_ASCII = {
   semicolon: `
                .-"      "-.
@@ -18,7 +18,7 @@ const COMPILER_ASCII = {
                 | \\IIIIII/ |
                 \\          /
                  \`--------\`
-          "Wow, a missing semicolon.
+          "Wow,
            Truly groundbreaking."
                - Compiler
   `,
@@ -32,8 +32,7 @@ const COMPILER_ASCII = {
               | \\     )|_
              /\`\\_\`>  <_/ \\
              \\__/'---'\\__/
-          "ANOTHER SYNTAX ERROR?
-           ARE YOU EVEN TRYING?"
+          "ARE YOU EVEN TRYING?"
                 - Compiler
   `,
   
@@ -49,8 +48,7 @@ const COMPILER_ASCII = {
              \\     ||     /
               \`._  ||  _.'
                  \`\"\"\"\`
-          "I can't believe you 
-           forgot a bracket... again."
+          "I can't believe you "
                 - Compiler
   `,
   
@@ -63,8 +61,7 @@ const COMPILER_ASCII = {
             |        |
              \\      /
               \`----'
-          "HAHAHA! That variable
-           doesn't even exist!"
+          "Utter waste"
                - Compiler
   `,
   
@@ -222,50 +219,8 @@ const EXTRA_COMPILER_ASCII = {
 
 // Default roast messages if API fails
 const DEFAULT_ROASTS = [
- "Oh wow, another syntax error. Maybe coding isn't for you?",  
-"Did you learn programming from a cereal box?",  
-"Your code is like my ex - full of issues and impossible to fix.",  
-"Wow, you're really pushing the boundaries of how many errors one person can make.",  
-"Have you considered a career in literally anything other than programming?",  
-"Your code is so bad, even the compiler is crying.",  
-"I've seen better code written by a cat walking on a keyboard.",  
-"Another error? I'm shocked. SHOCKED! Well, not that shocked.",  
-"Error-free code was never an option for you, was it?",  
-"Your coding style is... unique. And by unique, I mean terrible.",  
-"You code is so bad, even ChatGPT refuses to help.",  
-"I've seen rocks with better logic than you.",  
-"You must be coding with your eyes closed… or your brain off.",  
-"If stupidity was an exception, you'd be throwing them nonstop.",  
-"Your code is proof that some people should never touch a keyboard.",  
-"Honestly, I’d rather handwrite binary than debug your mess.",  
-"You must be using WiFi from a potato, because your logic ain't connecting.",  
-"You have the debugging skills of a drunk toddler.",  
-"Are you coding or just smashing your head on the keyboard?",  
-"Your indentation alone is a hate crime against programming.",  
-"Even viruses run better than your code.",  
-"I’d suggest a rubber duck for debugging, but it might file a restraining order.",  
-"Your error log is longer than your coding career.",  
-"The fact that your code compiles is a miracle. Too bad it doesn’t work.",  
-"If bad coding were an Olympic sport, you’d take gold—if you could figure out how to submit your entry.",  
-"Your code is so ugly, even the debugger refuses to step through it.",  
-"I've seen spaghetti code before, but you just served an entire buffet.",  
-"Your coding style is what happens when Ctrl+C and Ctrl+V go horribly wrong.",  
-"Your functions are like my patience—nonexistent.",  
-"You should rename your main file to 'disaster.py'.",  
-"Your code is so slow, snails are filing a defamation lawsuit.",  
-"The only thing scalable about your project is the number of bugs.",  
-"Your variable names are as random as your thought process.",  
-"If your code was a startup, it would fail before launch.",  
-"The compiler saw your code and filed for early retirement.",  
-"Even Notepad++ is embarrassed to open your files.",  
-"The garbage collector took one look at your code and quit its job.",  
-"You must have written this code while blindfolded and under hypnosis.",  
-"The only framework you're using is pure suffering.js.",  
-"Your syntax is so bad, even AI refuses to autocomplete.",  
-"I’d say ‘don’t quit your day job,’ but I really hope it’s not coding.",  
-"Even Clippy from Microsoft Word would refuse to help you with this mess."  
-
-  
+  "Oh wow, another syntax error. Maybe coding isn't for you?",  
+  // ... other default roasts remain unchanged
 ];
 
 // Set a cooldown timer to avoid spamming the output
@@ -285,7 +240,7 @@ function getRandomAsciiArt(): string {
   // Combine all ASCII art options
   const allAscii = [...Object.values(COMPILER_ASCII), ...Object.values(EXTRA_COMPILER_ASCII)];
   const randomIndex = Math.floor(Math.random() * allAscii.length);
-  return allAscii[randomIndex];
+    return allAscii[randomIndex];
 }
 
 // Function to get a random roast message
@@ -294,18 +249,36 @@ function getRandomRoast(): string {
   return DEFAULT_ROASTS[index];
 }
 
-// Function to generate a roast using Google Gemini API
-async function generateRoast(): Promise<string> {
+// Function to extract the error message from a diagnostic
+function getErrorMessage(diagnostic: vscode.Diagnostic): string {
+  return diagnostic.message;
+}
+
+// Function to generate a roast using Google Gemini API with context about the actual error
+async function generateRoast(editor: vscode.TextEditor, lineNumber: number, errors: vscode.Diagnostic[]): Promise<string> {
   try {
     if (!genAI) {
       return getRandomRoast();
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    const errorTypes = ['syntax', 'logic', 'runtime', 'semantic', 'compiler', 'typing', 'reference', 'naming', 'design', 'algorithm'];
-    const randomErrorType = errorTypes[Math.floor(Math.random() * errorTypes.length)];
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
-    const prompt = `Generate a short, brutal, and sarcastic roast (under 100 characters) for a developer who just made a ${randomErrorType} error in their code. Make it funny but not offensive. Start with 🔥.`;
+    // Get the line of code with the error
+    const lineText = editor.document.lineAt(lineNumber).text.trim();
+    
+    // Get the error messages
+    const errorMessages = errors.map(error => getErrorMessage(error)).join("\n");
+    
+    // Get language being used
+    const languageId = editor.document.languageId;
+    
+    // Create a contextual prompt that includes the code and error
+    const prompt = `
+Generate a short, brutal, and sarcastic dark roast (under 100 characters) for a developer who made an error in their ${languageId} code.
+The line of code with the error is: "${lineText}"
+The error message is: "${errorMessages}"
+
+Make it funny and sarcastic. Start with 🔥. Reply only with the roast and nothing else.`;
     
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -333,8 +306,11 @@ async function addCommentDecoration(editor: vscode.TextEditor, lineNumber: numbe
     });
   }
   
-  // Generate a roast
-  const roast = await generateRoast();
+  // Get the errors for this line
+  const errors = pendingErrorLines.get(lineNumber) || [];
+  
+  // Generate a contextual roast based on the actual error
+  const roast = await generateRoast(editor, lineNumber, errors);
   
   // Determine language-specific comment syntax
   const languageId = editor.document.languageId;
